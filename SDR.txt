@@ -1,0 +1,30 @@
+Issue:
+	- 2 devices (kioskMachine + Ipad) => How to know what screen are user using?
+		Option 1: SSE + Restful =>
+			- Ipad subcribe the SSE connection with server
+			- Each times user navigate to another screen/pages in kioskMachine => sent a request to server
+			 => Server sent a event message to redis channel
+				Redis channel publish message to all subribers
+					=> Each subcriber (Server pod) will find the ID => Send message(Active screen user's using) to Ipad 
+			Pros:
+				- Easy and quickly to setup
+			Cons:
+				- The SSE connection between Ipad and Server always on (24/24)
+				- Kiosk machine will send many request to server side (each url location each request)
+		Option 2: SSE + WebRTC + Restful
+			- KioskMachine and Ipad will subcribe a connection to server
+				=> KioskMachine and Ipad create a webRTC SDP offer (WebRTC Session Description Protocol offer)
+				=> KioskMachine send a SDP offer to server
+					 => Server sent a event message to redis channel
+						Redis channel publish message to all subribers
+							...
+							Server sent KioskMachine's SPD offer to Ipad	
+								=> Ipad offer then Send the Ipad's SPD to server
+									=> Server send a Ipad's SPD to KioskMachine
+										=> KioskMachine offer => Channel open => End SSE connection of KioskMachine and Ipad to server
+			Pros:
+				- Dont need to sent many request to server
+				- Only open SSE connection in first time want to open a channel
+			Cons:
+				- The comunicate is Client to Client via Wifi - LAN, can be blocked by SP network retriction or policy (If SP network blocked => Can use public TURN from google server channel)
+				
