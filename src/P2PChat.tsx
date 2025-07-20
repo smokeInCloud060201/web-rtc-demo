@@ -11,9 +11,13 @@ const P2PChat: React.FC = () => {
     const channelRef = useRef<RTCDataChannel | null>(null);
 
     const createConnection = async (isOfferer: boolean) => {
-        const pc = new RTCPeerConnection();
+        const pc = new RTCPeerConnection({
+            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+        });
 
-        pc.onicecandidate = () => {
+        pcRef.current = pc;
+
+        pc.onicecandidate = (event) => {
             if (pc.localDescription) {
                 setLocalSDP(JSON.stringify(pc.localDescription));
             }
@@ -21,6 +25,9 @@ const P2PChat: React.FC = () => {
 
         pc.onconnectionstatechange = () => {
             console.log('Connection state:', pc.connectionState);
+            if (pc.connectionState === 'connected') {
+                setConnected(true);
+            }
         };
 
         if (isOfferer) {
@@ -31,12 +38,11 @@ const P2PChat: React.FC = () => {
             await pc.setLocalDescription(offer);
         } else {
             pc.ondatachannel = (event) => {
-                console.log("onDataChannel ", event)
-                setupChannel(event.channel);
+                console.log('Received data channel');
+                const channel = event.channel;
+                setupChannel(channel);
             };
         }
-
-        pcRef.current = pc;
     };
 
     const setupChannel = (channel: RTCDataChannel) => {
@@ -48,9 +54,12 @@ const P2PChat: React.FC = () => {
         };
 
         channel.onmessage = (event: MessageEvent<string>) => {
-            console.log("onMessage ", event)
+            console.log('Message received from peer:', event.data);
             setMessages((prev) => [...prev, { sender: 'Peer', text: event.data }]);
         };
+
+        channel.onerror = (e) => console.error('Channel error:', e);
+        channel.onclose = () => console.log('Channel closed');
     };
 
     const setRemote = async () => {
@@ -71,59 +80,57 @@ const P2PChat: React.FC = () => {
         if (!text || !channelRef.current || channelRef.current.readyState !== 'open') return;
 
         channelRef.current.send(text);
-        console.log("Message sended ", text)
         setMessages((prev) => [...prev, { sender: 'You', text }]);
         setMessage('');
     };
 
-    console.log("connected ", connected)
-
     return (
         <div style={{ padding: 20, fontFamily: 'sans-serif', maxWidth: 600, margin: '0 auto' }}>
-            <h2>WebRTC</h2>
+            <h2>WebRTC Chat</h2>
 
             {!connected && (
                 <div style={{ marginBottom: 20 }}>
                     <button onClick={() => createConnection(true)}>Start (Offer)</button>
-                    <button onClick={() => createConnection(false)} style={{ marginLeft: 10 }}>Join (Answer)</button>
+                    <button onClick={() => createConnection(false)} style={{ marginLeft: 10 }}>
+                        Join (Answer)
+                    </button>
                 </div>
             )}
 
-            <div style={{ marginBottom: 10 }}>
-        <textarea
-            value={localSDP}
-            readOnly
-            rows={5}
-            style={{ width: '100%' }}
-            placeholder="Copy this SDP and send to peer"
-        />
-            </div>
-
-            <div style={{ marginBottom: 10 }}>
-        <textarea
-            value={remoteSDP}
-            onChange={(e) => setRemoteSDP(e.target.value)}
-            rows={5}
-            style={{ width: '100%' }}
-            placeholder="Paste peer's SDP here"
-        />
-                <button onClick={setRemote} style={{ marginTop: 5 }}>Set Remote SDP</button>
-            </div>
+            <textarea
+                value={localSDP}
+                readOnly
+                rows={6}
+                style={{ width: '100%', marginBottom: 10 }}
+                placeholder="Copy this SDP and send to peer"
+            />
+            <textarea
+                value={remoteSDP}
+                onChange={(e) => setRemoteSDP(e.target.value)}
+                rows={6}
+                style={{ width: '100%', marginBottom: 10 }}
+                placeholder="Paste peer's SDP here"
+            />
+            <button onClick={setRemote} style={{ marginBottom: 20 }}>
+                Set Remote SDP
+            </button>
 
             {connected && (
                 <>
-                    <div style={{
-                        border: '1px solid #ccc',
-                        borderRadius: 8,
-                        padding: 10,
-                        height: 250,
-                        overflowY: 'auto',
-                        marginBottom: 10,
-                        background: '#f9f9f9'
-                    }}>
+                    <div
+                        style={{
+                            border: '1px solid #ccc',
+                            borderRadius: 8,
+                            padding: 10,
+                            height: 250,
+                            overflowY: 'auto',
+                            marginBottom: 10,
+                            background: '#f9f9f9',
+                        }}
+                    >
                         {messages.map((msg, index) => (
-                            <div key={index} style={{ marginBottom: 6, display: 'flex', justifyContent: 'space-between' }} color='black'>
-                                <strong style={{color: 'black'}}>{msg.sender}:</strong> <span style={{color: 'black'}}>{msg.text}</span>
+                            <div key={index} style={{ marginBottom: 6 }}>
+                                <strong>{msg.sender}:</strong> <span>{msg.text}</span>
                             </div>
                         ))}
                     </div>
@@ -145,14 +152,12 @@ const P2PChat: React.FC = () => {
                                 color: '#fff',
                                 border: 'none',
                                 borderRadius: 4,
-                                cursor: 'pointer'
+                                cursor: 'pointer',
                             }}
                         >
                             Send
                         </button>
                     </div>
-
-                    <p style={{ marginTop: 10, color: 'green' }}>Connected — Start Chatting!</p>
                 </>
             )}
         </div>
