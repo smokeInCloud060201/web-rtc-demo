@@ -11,6 +11,8 @@ const P2PChat: React.FC = () => {
     const channelRef = useRef<RTCDataChannel | null>(null);
 
     const createConnection = async (isOfferer: boolean) => {
+        console.log('Creating connection as', isOfferer ? 'Offerer' : 'Answerer');
+
         const pc = new RTCPeerConnection({
             iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
         });
@@ -18,9 +20,21 @@ const P2PChat: React.FC = () => {
         pcRef.current = pc;
 
         pc.onicecandidate = (event) => {
-            if (pc.localDescription) {
+            if (event.candidate === null && pc.localDescription) {
                 setLocalSDP(JSON.stringify(pc.localDescription));
             }
+        };
+
+        pc.onicegatheringstatechange = () => {
+            console.log('ICE gathering state:', pc.iceGatheringState);
+            if (pc.iceGatheringState === 'complete' && pc.localDescription) {
+                console.log('ICE gathering complete');
+                setLocalSDP(JSON.stringify(pc.localDescription));
+            }
+        };
+
+        pc.oniceconnectionstatechange = () => {
+            console.log('ICE Connection State:', pc.iceConnectionState);
         };
 
         pc.onconnectionstatechange = () => {
@@ -66,19 +80,29 @@ const P2PChat: React.FC = () => {
         const pc = pcRef.current;
         if (!pc) return;
 
-        const desc = new RTCSessionDescription(JSON.parse(remoteSDP));
-        await pc.setRemoteDescription(desc);
+        try {
+            const desc = new RTCSessionDescription(JSON.parse(remoteSDP));
+            await pc.setRemoteDescription(desc);
+            console.log('Remote SDP set');
 
-        if (desc.type === 'offer') {
-            const answer = await pc.createAnswer();
-            await pc.setLocalDescription(answer);
+            if (desc.type === 'offer') {
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                console.log('Answer created and local SDP set');
+            }
+        } catch (err) {
+            console.error('Failed to set remote SDP:', err);
         }
     };
 
     const sendMessage = () => {
         const text = message.trim();
-        if (!text || !channelRef.current || channelRef.current.readyState !== 'open') return;
+        if (!text || !channelRef.current || channelRef.current.readyState !== 'open') {
+            console.warn('Channel not open or message empty');
+            return;
+        }
 
+        console.log('Sending message:', text);
         channelRef.current.send(text);
         setMessages((prev) => [...prev, { sender: 'You', text }]);
         setMessage('');
