@@ -1,4 +1,5 @@
-import React, { useRef, useState } from 'react';
+import React, {useEffect, useRef, useState} from 'react';
+import {sendOffer, subscribe} from "./service/app.service.ts";
 
 const P2PChat: React.FC = () => {
     const [localSDP, setLocalSDP] = useState('');
@@ -76,11 +77,12 @@ const P2PChat: React.FC = () => {
         channel.onclose = () => console.log('Channel closed');
     };
 
-    const setRemote = async () => {
+    const setRemote = async (remoteSDP: string) => {
         const pc = pcRef.current;
         if (!pc) return;
 
         try {
+            console.log("Remote SDP ", remoteSDP)
             const desc = new RTCSessionDescription(JSON.parse(remoteSDP));
             await pc.setRemoteDescription(desc);
             console.log('Remote SDP set');
@@ -107,6 +109,52 @@ const P2PChat: React.FC = () => {
         setMessages((prev) => [...prev, { sender: 'You', text }]);
         setMessage('');
     };
+
+    useEffect(() => {
+        const eventSource = subscribe({kioskName: window.localStorage.getItem("kioskName") || "", deviceName: window.localStorage.getItem("deviceName") || ""})
+
+        eventSource.onmessage = async (event) => {
+
+            console.log("Event ", event)
+            if (event.type === 'message') {
+                const data = JSON.parse(event.data);
+                switch (data?.state) {
+                    case 'OFFER':
+                        await createConnection(false)
+                        setRemoteSDP(JSON.parse(data?.payload))
+                        console.log("Data payload ", data?.payload)
+                        await setRemote(JSON.parse(data?.payload))
+                        break;
+                    case 'OFFERED':
+                        sendOffer({kioskName: window.localStorage.getItem("kioskName") || "", deviceName: window.localStorage.getItem("deviceName") || "", payload: {offer: localSDP, state: 'ANSWER'}})
+                        break;
+                    case 'ANSWER':
+                        setRemoteSDP(JSON.parse(data?.payload))
+                        await setRemote(JSON.parse(data?.payload))
+                        break;
+                    default:
+                        console.log("Not thing match ", data)
+                        break;
+                }
+            }
+        };
+
+        eventSource.onerror = (err) => {
+            console.error('SSE connection error:', err);
+            eventSource.close();
+        };
+
+        return () => {
+            eventSource.close();
+        };
+    }, []);
+
+    useEffect(() => {
+        if (localSDP && window.localStorage.getItem("deviceName") === 'machine') {
+            sendOffer({kioskName: window.localStorage.getItem("kioskName") || "", deviceName: window.localStorage.getItem("deviceName") || "", payload: {offer: localSDP, state: 'OFFER'}})
+        }
+
+    }, [localSDP]);
 
     return (
         <div style={{ padding: 20, fontFamily: 'sans-serif', maxWidth: 600, margin: '0 auto' }}>
@@ -153,7 +201,7 @@ const P2PChat: React.FC = () => {
                         }}
                     >
                         {messages.map((msg, index) => (
-                            <div key={index} style={{ marginBottom: 6 }}>
+                            <div key={index} style={{ marginBottom: 6, color: 'black' }}>
                                 <strong>{msg.sender}:</strong> <span>{msg.text}</span>
                             </div>
                         ))}
