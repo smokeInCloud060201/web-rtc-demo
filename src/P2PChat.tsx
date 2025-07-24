@@ -1,6 +1,7 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {sendOffer, subscribe} from "./service/app.service.ts";
 import {isRTCSubscriber} from "./hooks/getRTCConnectionType.ts";
+import type {EventSourcePolyfill} from "event-source-polyfill";
 
 const P2PChat: React.FC = () => {
     const [localSDP, setLocalSDP] = useState('');
@@ -9,8 +10,11 @@ const P2PChat: React.FC = () => {
     const [message, setMessage] = useState('');
     const [connected, setConnected] = useState(false);
 
+    const location = window.location.pathname
+
     const pcRef = useRef<RTCPeerConnection | null>(null);
     const channelRef = useRef<RTCDataChannel | null>(null);
+    const eventSourceRef = useRef<EventSourcePolyfill | null>(null)
 
     const createConnection = async (isOfferer: boolean) => {
         console.log('Creating connection as', isOfferer ? 'Offerer' : 'Answerer');
@@ -43,6 +47,9 @@ const P2PChat: React.FC = () => {
             console.log('Connection state:', pc.connectionState);
             if (pc.connectionState === 'connected') {
                 setConnected(true);
+                if (eventSourceRef.current) {
+                    eventSourceRef.current.close()
+                }
             }
         };
 
@@ -91,14 +98,14 @@ const P2PChat: React.FC = () => {
             if (desc.type === 'offer') {
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
-                console.log('Answer created and local SDP set');
+                return answer;
             }
         } catch (err) {
             console.error('Failed to set remote SDP:', err);
         }
     };
 
-    const sendMessage = () => {
+    const sendMessage = (message: string) => {
         const text = message.trim();
         if (!text || !channelRef.current || channelRef.current.readyState !== 'open') {
             console.warn('Channel not open or message empty');
@@ -112,30 +119,39 @@ const P2PChat: React.FC = () => {
     };
 
     useEffect(() => {
-        const eventSource = subscribe({kioskName: window.localStorage.getItem("kioskName") || "", deviceName: window.localStorage.getItem("deviceName") || ""})
+        if (!isRTCSubscriber()) {
+            sendMessage(location)
+        }
+    }, [location]);
 
+    useEffect(() => {
+        const eventSource = subscribe({kioskName: window.localStorage.getItem("kioskName") || "", deviceName: window.localStorage.getItem("deviceName") || ""})
+        eventSourceRef.current = eventSource
         eventSource.onmessage = async (event) => {
 
             console.log("Event ", event)
             if (event.type === 'message') {
                 const data = JSON.parse(event.data);
                 switch (data?.state) {
-                    case 'OFFER':
+                    case 'OFFER': {
+                        const remoteSDP = JSON.stringify(data?.payload)
+                        console.log(" JSON.stringify(data?.payload) ", remoteSDP)
+                        setRemoteSDP(remoteSDP)
                         await createConnection(false)
-                        console.log("Data payload ", data?.payload)
-                        setRemoteSDP(JSON.stringify(data?.payload))
-                        await createConnection(false)
-                        await setRemote(JSON.stringify(data?.payload))
-                        sendOffer({kioskName: window.localStorage.getItem("kioskName") || "", deviceName: window.localStorage.getItem("deviceName") || "", payload: {offer: localSDP, state: 'OFFERED'}})
+                        const answer = await setRemote(remoteSDP)
+                        console.log("answers ", answer)
+                        if (answer) {
+                            await sendOffer({kioskName: window.localStorage.getItem("kioskName") || "", deviceName: window.localStorage.getItem("deviceName") || "", payload: {offer: answer, state: 'OFFERED'}})
+                        }
                         break;
-                    case 'OFFERED':
-                        sendOffer({kioskName: window.localStorage.getItem("kioskName") || "", deviceName: window.localStorage.getItem("deviceName") || "", payload: {offer: localSDP, state: 'ANSWER'}})
+                    }
+                    case 'OFFERED': {
+                        const remoteSDP = JSON.stringify(data?.payload)
+                        setRemoteSDP(remoteSDP)
+                        await setRemote(remoteSDP)
+                        eventSource.close()
                         break;
-                    case 'ANSWER':
-                        console.log(" remote answer ", data?.payload)
-                        setRemoteSDP(JSON.stringify(data?.payload))
-                        await setRemote(JSON.stringify(data?.payload))
-                        break;
+                    }
                     default:
                         console.log("Not thing match ", data)
                         break;
@@ -151,14 +167,17 @@ const P2PChat: React.FC = () => {
         return () => {
             eventSource.close();
         };
-    }, []);
+    }, [createConnection]);
 
     useEffect(() => {
-        if (localSDP && window.localStorage.getItem("deviceName") === 'machine' && !isRTCSubscriber()) {
+        if (!localSDP) {
+            createConnection(true)
+        }
+        if (!connected && localSDP && window.localStorage.getItem("deviceName") === 'machine' && !isRTCSubscriber()) {
             sendOffer({kioskName: window.localStorage.getItem("kioskName") || "", deviceName: window.localStorage.getItem("deviceName") || "", payload: {offer: JSON.parse(localSDP), state: 'OFFER'}})
         }
 
-    }, [localSDP]);
+    }, [connected, createConnection, localSDP]);
 
     return (
         <div style={{ padding: 20, fontFamily: 'sans-serif', maxWidth: 600, margin: '0 auto' }}>
@@ -187,7 +206,7 @@ const P2PChat: React.FC = () => {
                 style={{ width: '100%', marginBottom: 10 }}
                 placeholder="Paste peer's SDP here"
             />
-            <button onClick={setRemote} style={{ marginBottom: 20 }}>
+            <button onClick={() => setRemote(remoteSDP)} style={{ marginBottom: 20 }}>
                 Set Remote SDP
             </button>
 
@@ -215,12 +234,12 @@ const P2PChat: React.FC = () => {
                         <input
                             value={message}
                             onChange={(e) => setMessage(e.target.value)}
-                            onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
+                            onKeyDown={(e) => e.key === 'Enter' && sendMessage(message)}
                             style={{ flexGrow: 1, padding: 8, borderRadius: 4, border: '1px solid #ccc' }}
                             placeholder="Type your message..."
                         />
                         <button
-                            onClick={sendMessage}
+                            onClick={() => sendMessage(message)}
                             style={{
                                 marginLeft: 8,
                                 padding: '8px 16px',
