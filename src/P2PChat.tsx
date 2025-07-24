@@ -1,5 +1,6 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {sendOffer, subscribe} from "./service/app.service.ts";
+import {isRTCSubscriber} from "./hooks/getRTCConnectionType.ts";
 
 const P2PChat: React.FC = () => {
     const [localSDP, setLocalSDP] = useState('');
@@ -121,16 +122,19 @@ const P2PChat: React.FC = () => {
                 switch (data?.state) {
                     case 'OFFER':
                         await createConnection(false)
-                        setRemoteSDP(JSON.parse(data?.payload))
                         console.log("Data payload ", data?.payload)
-                        await setRemote(JSON.parse(data?.payload))
+                        setRemoteSDP(JSON.stringify(data?.payload))
+                        await createConnection(false)
+                        await setRemote(JSON.stringify(data?.payload))
+                        sendOffer({kioskName: window.localStorage.getItem("kioskName") || "", deviceName: window.localStorage.getItem("deviceName") || "", payload: {offer: localSDP, state: 'OFFERED'}})
                         break;
                     case 'OFFERED':
                         sendOffer({kioskName: window.localStorage.getItem("kioskName") || "", deviceName: window.localStorage.getItem("deviceName") || "", payload: {offer: localSDP, state: 'ANSWER'}})
                         break;
                     case 'ANSWER':
-                        setRemoteSDP(JSON.parse(data?.payload))
-                        await setRemote(JSON.parse(data?.payload))
+                        console.log(" remote answer ", data?.payload)
+                        setRemoteSDP(JSON.stringify(data?.payload))
+                        await setRemote(JSON.stringify(data?.payload))
                         break;
                     default:
                         console.log("Not thing match ", data)
@@ -150,8 +154,8 @@ const P2PChat: React.FC = () => {
     }, []);
 
     useEffect(() => {
-        if (localSDP && window.localStorage.getItem("deviceName") === 'machine') {
-            sendOffer({kioskName: window.localStorage.getItem("kioskName") || "", deviceName: window.localStorage.getItem("deviceName") || "", payload: {offer: localSDP, state: 'OFFER'}})
+        if (localSDP && window.localStorage.getItem("deviceName") === 'machine' && !isRTCSubscriber()) {
+            sendOffer({kioskName: window.localStorage.getItem("kioskName") || "", deviceName: window.localStorage.getItem("deviceName") || "", payload: {offer: JSON.parse(localSDP), state: 'OFFER'}})
         }
 
     }, [localSDP]);
