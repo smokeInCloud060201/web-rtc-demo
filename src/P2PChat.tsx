@@ -12,6 +12,8 @@ const P2PChat: React.FC = () => {
 
     const location = window.location.pathname
 
+    const videoRef = useRef<HTMLVideoElement | null>(null);
+
     const pcRef = useRef<RTCPeerConnection | null>(null);
     const channelRef = useRef<RTCDataChannel | null>(null);
     const eventSourceRef = useRef<EventSourcePolyfill | null>(null)
@@ -48,7 +50,7 @@ const P2PChat: React.FC = () => {
             if (pc.connectionState === 'connected') {
                 setConnected(true);
                 if (eventSourceRef.current) {
-                    eventSourceRef.current.close()
+                    // eventSourceRef.current.close()
                 }
             }
         };
@@ -66,6 +68,32 @@ const P2PChat: React.FC = () => {
                 setupChannel(channel);
             };
         }
+
+        pc.ontrack = (event) => {
+            if (videoRef.current) {
+                videoRef.current.srcObject = event.streams[0];
+            }
+        };
+    };
+
+    const startScreenShare = async () => {
+        if (!pcRef.current) return;
+
+        const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+
+        stream.getTracks().forEach(track => {
+            pcRef.current?.addTrack(track, stream);
+        });
+
+        // Renegotiate
+        const offer = await pcRef.current.createOffer();
+        await pcRef.current.setLocalDescription(offer);
+
+        sendOffer({
+            kioskName: window.localStorage.getItem("kioskName") || "",
+            deviceName: window.localStorage.getItem("deviceName") || "",
+            payload: { offer, state: 'OFFER' }
+        });
     };
 
     const setupChannel = (channel: RTCDataChannel) => {
@@ -252,6 +280,11 @@ const P2PChat: React.FC = () => {
                         >
                             Send
                         </button>
+                    </div>
+
+                    <div>
+                        <button onClick={startScreenShare}>Share screen</button>
+                        <video ref={videoRef} autoPlay playsInline style={{ width: "80%", border: "1px solid #ccc" }} />
                     </div>
                 </>
             )}

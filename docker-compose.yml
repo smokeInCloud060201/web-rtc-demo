@@ -1,0 +1,17 @@
+version: "3.8"
+
+services:
+  coturn:
+    image: instrumentisto/coturn
+    container_name: coturn
+    ports:
+      - "3478:3478/tcp"
+      - "3478:3478/udp"
+    command:
+      - "-n"
+      - "--log-file=stdout"
+      - "--lt-cred-mech"
+      - "--realm=localhost"
+      - "--user=testuser:testpass"
+      - "--no-multicast-peers"
+    restart: unless-stopped

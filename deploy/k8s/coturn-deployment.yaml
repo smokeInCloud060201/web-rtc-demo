@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coturn
+  labels:
+    app: coturn
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: coturn
+  template:
+    metadata:
+      labels:
+        app: coturn
+    spec:
+      containers:
+        - name: coturn
+          image: instrumentisto/coturn:latest
+          ports:
+            - containerPort: 3478
+              protocol: UDP
+            - containerPort: 3478
+              protocol: TCP
+          args:
+            - "-n"
+            - "--log-file=stdout"
+            - "--lt-cred-mech"
+            - "--realm=localhost"
+            - "--user=testuser:testpass"
+            - "--no-multicast-peers"
+            - "-v"
+          resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 50m
+              memory: 64Mi
